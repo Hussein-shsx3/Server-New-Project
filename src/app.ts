@@ -7,6 +7,10 @@ import compression from "compression";
 import rateLimit from "express-rate-limit";
 import { errorHandler, notFound } from "./middleware/errorMiddleware";
 
+// Import routes
+import authRoutes from "./routes/authRoutes";
+import itineraryRoutes from "./routes/itineraryRoutes";
+
 const app: Application = express();
 
 // Security Middleware
@@ -14,7 +18,7 @@ app.use(helmet());
 
 // CORS Configuration
 const corsOptions = {
-  origin: process.env.CORS_ORIGIN?.split(",") || "*",
+  origin: process.env.CORS_ORIGIN?.split(",") || ["http://localhost:3000"],
   credentials: true,
   optionsSuccessStatus: 200,
 };
@@ -62,22 +66,19 @@ app.get("/health", (req: Request, res: Response) => {
 app.get("/api", (req: Request, res: Response) => {
   res.status(200).json({
     success: true,
-    message: "API is running",
+    message: "WanderWise API is running",
     version: "1.0.0",
     endpoints: {
       health: "/health",
-      api: "/api",
+      auth: "/api/auth",
+      itineraries: "/api/itineraries",
     },
   });
 });
 
 // API Routes
-// TODO: Import and use your routes here
-// Example:
-// import authRoutes from "./routes/authRoutes";
-// import userRoutes from "./routes/userRoutes";
-// app.use("/api/auth", authRoutes);
-// app.use("/api/users", userRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/itineraries", itineraryRoutes);
 
 // 404 Handler - Must be after all routes
 app.use(notFound);
