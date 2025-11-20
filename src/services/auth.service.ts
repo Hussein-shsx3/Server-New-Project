@@ -16,70 +16,48 @@ import {
 } from "../dtos/auth.dto";
 
 /**
- * Register a new user and send verification email
+ * Register a new user
  */
 export const registerUserService = async (data: RegisterDTO) => {
   const { firstName, lastName, email, password } = data;
 
   console.log("Register service - Received:", { firstName, lastName, email, password: "***" });
 
-  // Check if user already exists FIRST before any operations
+  // Check if user already exists
   const existingUser = await User.findOne({ email });
   if (existingUser) {
     console.log("User already exists:", email);
     throw new AppError("Email already exists", 400, "DUPLICATE_KEY");
   }
 
-  // Create the user
+  // Create the user with isVerified = true (no email verification needed)
   console.log("Creating new user...");
-  const user = await User.create({ firstName, lastName, email, password });
+  const user = await User.create({ 
+    firstName, 
+    lastName, 
+    email, 
+    password,
+    isVerified: true // Set to true immediately - no email verification required
+  });
   console.log("User created successfully:", user._id);
-
-  // Generate verification token
-  const { token: verificationToken, expires } = generateToken(32, 24); // 24 hours
-  user.verificationToken = verificationToken;
-  user.verificationTokenExpires = expires;
-  await user.save();
-  console.log("Verification token generated");
 
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET!, {
     expiresIn: "1d",
   });
 
-  // Build response FIRST
-  const response = {
+  console.log("Registration completed successfully");
+  return {
     success: true,
-    message:
-      "Registration successful! Check your email to verify your account.",
+    message: "Registration successful! You can now login.",
     token,
     user: {
       id: user._id,
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
+      isVerified: true,
     },
   };
-
-  // Send verification email asynchronously (DON'T wait for it)
-  // This way the response is sent to client immediately
-  (async () => {
-    try {
-      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-      const url = `${frontendUrl}/verify?token=${verificationToken}`;
-      console.log("Sending verification email to:", email);
-      console.log("Verification URL:", url);
-      
-      const html = generateEmailTemplate(user.firstName, url, "verify");
-      await sendEmail(user.email, "Verify Your WanderWise Account", html);
-      console.log("✅ Verification email sent successfully to:", email);
-    } catch (emailError) {
-      console.error("❌ Email sending failed:", emailError);
-      // Email failed but user is registered - they can resend from verify page
-    }
-  })();
-
-  console.log("Registration response sent to client");
-  return response;
 };
 
 /**
@@ -91,13 +69,6 @@ export const loginUserService = async (data: LoginDTO) => {
   const user = await User.findOne({ email }).select("+password");
   if (!user)
     throw new AppError("Invalid credentials", 401, "INVALID_CREDENTIALS");
-
-  if (!user.isVerified)
-    throw new AppError(
-      "Please verify your email first",
-      401,
-      "EMAIL_NOT_VERIFIED"
-    );
 
   const isMatch = await user.comparePassword(password);
   if (!isMatch)
@@ -117,73 +88,6 @@ export const loginUserService = async (data: LoginDTO) => {
       lastName: user.lastName,
     },
   };
-};
-
-/**
- * Verify user's email
- */
-export const verifyUserService = async (data: VerifyEmailDTO) => {
-  const { token } = data;
-
-  const user = await User.findOne({
-    verificationToken: token,
-    verificationTokenExpires: { $gt: new Date() },
-  });
-
-  if (!user)
-    throw new AppError(
-      "Verification token is invalid or expired",
-      400,
-      "INVALID_TOKEN"
-    );
-
-  user.isVerified = true;
-  user.verificationToken = null;
-  user.verificationTokenExpires = null;
-  await user.save();
-
-  // Generate JWT token for auto-login
-  const jwtToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET!, {
-    expiresIn: "1d",
-  });
-
-  return {
-    success: true,
-    message: "Email verified successfully! Welcome to WanderWise!",
-    token: jwtToken,
-    user: {
-      id: user._id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      isVerified: true,
-    },
-  };
-};
-
-/**
- * Resend verification email
- */
-export const resendVerificationService = async (
-  data: ResendVerificationDTO
-) => {
-  const { email } = data;
-
-  const user = await User.findOne({ email });
-  if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
-  if (user.isVerified)
-    throw new AppError("Email already verified", 400, "ALREADY_VERIFIED");
-
-  const { token, expires } = generateToken(32, 24); // 24 hours
-  user.verificationToken = token;
-  user.verificationTokenExpires = expires;
-  await user.save();
-
-  const url = `${process.env.FRONTEND_URL}/verify?token=${token}`;
-  const html = generateEmailTemplate(user.firstName, url, "verify");
-  await sendEmail(user.email, "Verify Your WanderWise Account", html);
-
-  return { success: true, message: "Verification email resent successfully" };
 };
 
 /**

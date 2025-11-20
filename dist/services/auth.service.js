@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resetPasswordService = exports.forgotPasswordService = exports.resendVerificationService = exports.verifyUserService = exports.loginUserService = exports.registerUserService = void 0;
+exports.resetPasswordService = exports.forgotPasswordService = exports.loginUserService = exports.registerUserService = void 0;
 const user_model_1 = require("../models/user.model");
 const errorMiddleware_1 = require("../middleware/errorMiddleware");
 const generateToken_1 = require("../utils/generateToken");
@@ -12,61 +12,43 @@ const emailTemplate_1 = require("../utils/emailTemplate");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 /**
- * Register a new user and send verification email
+ * Register a new user
  */
 const registerUserService = async (data) => {
     const { firstName, lastName, email, password } = data;
     console.log("Register service - Received:", { firstName, lastName, email, password: "***" });
-    // Check if user already exists FIRST before any operations
+    // Check if user already exists
     const existingUser = await user_model_1.User.findOne({ email });
     if (existingUser) {
         console.log("User already exists:", email);
         throw new errorMiddleware_1.AppError("Email already exists", 400, "DUPLICATE_KEY");
     }
-    // Create the user
+    // Create the user with isVerified = true (no email verification needed)
     console.log("Creating new user...");
-    const user = await user_model_1.User.create({ firstName, lastName, email, password });
+    const user = await user_model_1.User.create({
+        firstName,
+        lastName,
+        email,
+        password,
+        isVerified: true // Set to true immediately - no email verification required
+    });
     console.log("User created successfully:", user._id);
-    // Generate verification token
-    const { token: verificationToken, expires } = (0, generateToken_1.generateToken)(32, 24); // 24 hours
-    user.verificationToken = verificationToken;
-    user.verificationTokenExpires = expires;
-    await user.save();
-    console.log("Verification token generated");
     const token = jsonwebtoken_1.default.sign({ id: user._id }, process.env.JWT_SECRET, {
         expiresIn: "1d",
     });
-    // Build response FIRST
-    const response = {
+    console.log("Registration completed successfully");
+    return {
         success: true,
-        message: "Registration successful! Check your email to verify your account.",
+        message: "Registration successful! You can now login.",
         token,
         user: {
             id: user._id,
             email: user.email,
             firstName: user.firstName,
             lastName: user.lastName,
+            isVerified: true,
         },
     };
-    // Send verification email asynchronously (DON'T wait for it)
-    // This way the response is sent to client immediately
-    (async () => {
-        try {
-            const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-            const url = `${frontendUrl}/verify?token=${verificationToken}`;
-            console.log("Sending verification email to:", email);
-            console.log("Verification URL:", url);
-            const html = (0, emailTemplate_1.generateEmailTemplate)(user.firstName, url, "verify");
-            await (0, sendEmail_1.sendEmail)(user.email, "Verify Your WanderWise Account", html);
-            console.log("✅ Verification email sent successfully to:", email);
-        }
-        catch (emailError) {
-            console.error("❌ Email sending failed:", emailError);
-            // Email failed but user is registered - they can resend from verify page
-        }
-    })();
-    console.log("Registration response sent to client");
-    return response;
 };
 exports.registerUserService = registerUserService;
 /**
@@ -77,8 +59,6 @@ const loginUserService = async (data) => {
     const user = await user_model_1.User.findOne({ email }).select("+password");
     if (!user)
         throw new errorMiddleware_1.AppError("Invalid credentials", 401, "INVALID_CREDENTIALS");
-    if (!user.isVerified)
-        throw new errorMiddleware_1.AppError("Please verify your email first", 401, "EMAIL_NOT_VERIFIED");
     const isMatch = await user.comparePassword(password);
     if (!isMatch)
         throw new errorMiddleware_1.AppError("Invalid credentials", 401, "INVALID_CREDENTIALS");
@@ -97,59 +77,6 @@ const loginUserService = async (data) => {
     };
 };
 exports.loginUserService = loginUserService;
-/**
- * Verify user's email
- */
-const verifyUserService = async (data) => {
-    const { token } = data;
-    const user = await user_model_1.User.findOne({
-        verificationToken: token,
-        verificationTokenExpires: { $gt: new Date() },
-    });
-    if (!user)
-        throw new errorMiddleware_1.AppError("Verification token is invalid or expired", 400, "INVALID_TOKEN");
-    user.isVerified = true;
-    user.verificationToken = null;
-    user.verificationTokenExpires = null;
-    await user.save();
-    // Generate JWT token for auto-login
-    const jwtToken = jsonwebtoken_1.default.sign({ id: user._id }, process.env.JWT_SECRET, {
-        expiresIn: "1d",
-    });
-    return {
-        success: true,
-        message: "Email verified successfully! Welcome to WanderWise!",
-        token: jwtToken,
-        user: {
-            id: user._id,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            isVerified: true,
-        },
-    };
-};
-exports.verifyUserService = verifyUserService;
-/**
- * Resend verification email
- */
-const resendVerificationService = async (data) => {
-    const { email } = data;
-    const user = await user_model_1.User.findOne({ email });
-    if (!user)
-        throw new errorMiddleware_1.AppError("User not found", 404, "USER_NOT_FOUND");
-    if (user.isVerified)
-        throw new errorMiddleware_1.AppError("Email already verified", 400, "ALREADY_VERIFIED");
-    const { token, expires } = (0, generateToken_1.generateToken)(32, 24); // 24 hours
-    user.verificationToken = token;
-    user.verificationTokenExpires = expires;
-    await user.save();
-    const url = `${process.env.FRONTEND_URL}/verify?token=${token}`;
-    const html = (0, emailTemplate_1.generateEmailTemplate)(user.firstName, url, "verify");
-    await (0, sendEmail_1.sendEmail)(user.email, "Verify Your WanderWise Account", html);
-    return { success: true, message: "Verification email resent successfully" };
-};
-exports.resendVerificationService = resendVerificationService;
 /**
  * Forgot password - send reset email
  */

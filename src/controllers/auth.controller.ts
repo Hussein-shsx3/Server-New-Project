@@ -4,8 +4,6 @@ import { asyncHandler } from "../middleware/errorMiddleware";
 import {
   registerUserService,
   loginUserService,
-  verifyUserService,
-  resendVerificationService,
   forgotPasswordService,
   resetPasswordService,
 } from "../services/auth.service";
@@ -13,8 +11,6 @@ import {
 import {
   RegisterDTO,
   LoginDTO,
-  VerifyEmailDTO,
-  ResendVerificationDTO,
   ForgotPasswordDTO,
   ResetPasswordDTO,
 } from "../dtos/auth.dto";
@@ -40,28 +36,6 @@ export const loginUser = asyncHandler(async (req: Request, res: Response) => {
   const result = await loginUserService(data);
   res.status(200).json(result);
 });
-
-/**
- * @desc Verify user's email
- * @route POST /api/auth/verify
- */
-export const verifyUser = asyncHandler(async (req: Request, res: Response) => {
-  const data: VerifyEmailDTO = req.body;
-  const result = await verifyUserService(data);
-  res.status(200).json(result);
-});
-
-/**
- * @desc Resend verification email
- * @route POST /api/auth/resend-verification
- */
-export const resendVerification = asyncHandler(
-  async (req: Request, res: Response) => {
-    const data: ResendVerificationDTO = req.body;
-    const result = await resendVerificationService(data);
-    res.status(200).json(result);
-  }
-);
 
 /**
  * @desc Forgot password - send reset link
